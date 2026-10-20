@@ -23,6 +23,10 @@ dependencies = [
     "greenlet (>=3.2.4,<4.0.0)",
     "infisicalsdk (>=1.0.17,<2.0.0)",
     "boto3 (>=1.43.108,<2.0.0)",
+    "authtools @ git+https://github.com/AutoFolwark/shared_auth.git@v0.1.8",
+    "googletrans (>=4.0.2,<5.0.0)",
+    "apscheduler (>=3.11.0,<4.0.0)",
+    "python-slugify (>=9.1.0,<10.0.0)",
 ]
 
 [tool.poetry]

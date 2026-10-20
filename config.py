@@ -14,6 +14,12 @@ class Environment(str, Enum):
     PRODUCTION = "production"
 
 
+class Permissions(str, Enum):
+    ARTICLE_ALL_READ = "blog.article.all:read"
+    ARTICLE_ALL_WRITE = "blog.article.all:write"
+    ARTICLE_PUBLISH_WRITE = "blog.article.publish:write"
+
+
 class Settings(BaseSettings):
     # Application
     APP_NAME: str = "blog-service"
@@ -43,6 +49,16 @@ class Settings(BaseSettings):
 
     # Redis
     REDIS_URL: str = "redis://localhost:6379"
+
+    # Translation
+    TRANSLATION_ENABLED: bool = True
+    TRANSLATION_LANGUAGES: list[str] = ["en", "pl", "uk", "cs", "de", "sl"]
+    TRANSLATION_INTERVAL_SECONDS: int = 60
+    TRANSLATION_BATCH_SIZE: int = 10
+    TRANSLATION_MAX_ATTEMPTS: int = 5
+    TRANSLATION_RETRY_BASE_SECONDS: int = 60
+    TRANSLATION_REQUEST_DELAY_SECONDS: float = 1.0
+    TRANSLATION_CHUNK_CHARS: int = 4500
 
     model_config = SettingsConfigDict(
         env_file=".env", env_file_encoding="utf-8", extra="ignore"
