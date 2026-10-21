@@ -130,6 +130,7 @@ def load_secrets():
 
     deployed = is_aws or is_in_docker()
     os.environ["DEBUG"] = "false" if deployed else "true"
-    # Docs follow ENVIRONMENT, so a container must not keep the development default.
-    if deployed:
+    # Docs follow ENVIRONMENT. An explicit value (local dev sets development)
+    # is kept. A container with no value must not fall through to the default.
+    if deployed and not os.environ.get("ENVIRONMENT", "").strip():
         os.environ["ENVIRONMENT"] = "production"
