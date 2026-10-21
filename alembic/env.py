@@ -4,6 +4,7 @@ from sqlalchemy import engine_from_config, pool
 
 from alembic import context
 from config import settings
+from core.utils import BASE_DIR
 from database.models import Base
 
 # this is the Alembic Config object, which provides
@@ -11,7 +12,7 @@ from database.models import Base
 config = context.config
 
 if settings.DEBUG:
-    SQLALCHEMY_DATABASE_URL = "sqlite:///db.sqlite"
+    SQLALCHEMY_DATABASE_URL = f"sqlite:///{BASE_DIR}/db.sqlite"
 else:
     SQLALCHEMY_DATABASE_URL = f"postgresql://{settings.DB_USER}:{settings.DB_PASS}@{settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}"
 db_url = SQLALCHEMY_DATABASE_URL

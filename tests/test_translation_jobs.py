@@ -1,4 +1,5 @@
 import asyncio
+import sys
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -6,8 +7,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from config import settings
-from database.db.session import AsyncSessionLocal, engine
-from database.models import Article, ArticleTranslationJob, Base
+from database.db.session import AsyncSessionLocal
+from database.models import Article, ArticleTranslationJob
 from schemas.article import ArticleRetranslate, ArticleWrite
 from services.articles import (
     create_article,
@@ -29,21 +30,19 @@ SOURCE = ArticleWrite(
     language="en",
     title="Hello",
     slug="hello",
-    text="# Hello\n\nBody",
+    text="<p>Hello</p>",
 )
 
 
 @pytest.fixture
-def tables():
-    Base.metadata.drop_all(engine)
-    Base.metadata.create_all(engine)
+def tables(test_db, monkeypatch):
+    monkeypatch.setattr(sys.modules[__name__], "AsyncSessionLocal", test_db.sessions)
     yield
-    Base.metadata.drop_all(engine)
 
 
 def _patch_translate(monkeypatch, translate):
     monkeypatch.setattr("services.translation.jobs.translate", translate)
-    monkeypatch.setattr("services.translation.markdown.translate", translate)
+    monkeypatch.setattr("services.translation.html.translate", translate)
 
 
 async def fake_translate(text, src, dest):
@@ -162,7 +161,7 @@ def test_source_edit_keeps_manual_and_translate_overwrites_it(tables, monkeypatc
                     language="en",
                     title="Hello again",
                     slug="hello",
-                    text="# Hello again",
+                    text="<p>Hello again</p>",
                 ),
             )
             article = await session.execute(

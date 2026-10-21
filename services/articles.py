@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from uuid import uuid4
 
 from rfc9457 import BadRequestProblem, NotFoundProblem
 from sqlalchemy import func, select
@@ -14,14 +15,21 @@ from schemas.article import (
     ArticleRetranslate,
     ArticleTranslationOut,
     ArticleWrite,
+    PublicArticleCard,
+    PublicArticleOut,
+    PublicArticlePage,
+    PublicTranslationLink,
     TranslationStatusOut,
 )
+from services.translation.html import article_description, visible_article_text
 from services.translation.jobs import (
     enqueue,
     languages_to_refresh,
     mark_job_done,
     target_languages,
+    unique_slug,
 )
+from services.translation.translator import TranslationError, detect_language
 
 
 class ArticleConflictProblem(BadRequestProblem):
@@ -96,6 +104,16 @@ async def _save(session: AsyncSession, article: Article) -> Article:
     return await _load_article(session, article.id)
 
 
+async def _with_language(data: ArticleWrite) -> ArticleWrite:
+    if data.language:
+        return data
+    try:
+        language = await detect_language(visible_article_text(data.title, data.text))
+    except TranslationError as exc:
+        raise BadRequestProblem(detail=str(exc)) from None
+    return data.model_copy(update={"language": language})
+
+
 def _translation(data: ArticleWrite, origin: str) -> ArticleTranslation:
     return ArticleTranslation(
         language=data.language,
@@ -107,12 +125,18 @@ def _translation(data: ArticleWrite, origin: str) -> ArticleTranslation:
 
 
 async def create_article(session: AsyncSession, data: ArticleWrite) -> ArticleOut:
-    article = Article(
-        source_language=data.language,
-        translations=[_translation(data, "source")],
+    data = await _with_language(data)
+    translation = _translation(
+        data.model_copy(update={"slug": data.slug or f"tmp-{uuid4().hex}"}),
+        "source",
     )
+    article = Article(source_language=data.language, translations=[translation])
     session.add(article)
     await session.flush()
+    if not data.slug:
+        translation.slug = await unique_slug(
+            session, data.language, data.title, article.id
+        )
     await enqueue(session, article, list(settings.TRANSLATION_LANGUAGES), False)
     return serialize_article(await _save(session, article))
 
@@ -120,9 +144,18 @@ async def create_article(session: AsyncSession, data: ArticleWrite) -> ArticleOu
 async def update_article(
     session: AsyncSession, article_id: int, data: ArticleWrite
 ) -> ArticleOut:
+    data = await _with_language(data)
     article = await _load_article(session, article_id)
     existing = {item.language: item for item in article.translations}
     translation = existing.get(data.language)
+    if not data.slug:
+        data = data.model_copy(
+            update={
+                "slug": translation.slug
+                if translation is not None
+                else await unique_slug(session, data.language, data.title, article.id)
+            }
+        )
     if data.language == article.source_language:
         if translation is None:
             article.translations.append(_translation(data, "source"))
@@ -180,6 +213,78 @@ async def list_articles(session: AsyncSession, page: int, size: int) -> ArticleP
         page=page,
         size=size,
         total=total or 0,
+    )
+
+
+def _published_filters(language: str):
+    return (
+        Article.status == "published",
+        ArticleTranslation.language == language.strip().lower(),
+    )
+
+
+async def list_published_articles(
+    session: AsyncSession, language: str, page: int, size: int
+) -> PublicArticlePage:
+    filters = _published_filters(language)
+    total = await session.scalar(
+        select(func.count())
+        .select_from(ArticleTranslation)
+        .join(Article, ArticleTranslation.article_id == Article.id)
+        .where(*filters)
+    )
+    result = await session.execute(
+        select(Article, ArticleTranslation)
+        .join(ArticleTranslation, ArticleTranslation.article_id == Article.id)
+        .where(*filters)
+        .order_by(Article.published_at.desc(), Article.id.desc())
+        .offset((page - 1) * size)
+        .limit(size)
+    )
+    items = [
+        PublicArticleCard(
+            id=article.id,
+            language=translation.language,
+            title=translation.title,
+            slug=translation.slug,
+            description=article_description(translation.text),
+            published_at=article.published_at,
+        )
+        for article, translation in result.all()
+    ]
+    return PublicArticlePage(items=items, page=page, size=size, total=total or 0)
+
+
+async def get_published_article(
+    session: AsyncSession, language: str, slug: str
+) -> PublicArticleOut:
+    code = language.strip().lower()
+    result = await session.execute(
+        select(Article, ArticleTranslation)
+        .join(ArticleTranslation, ArticleTranslation.article_id == Article.id)
+        .where(*_published_filters(code), ArticleTranslation.slug == slug)
+        .options(selectinload(Article.translations))
+    )
+    row = result.unique().one_or_none()
+    if row is None:
+        raise NotFoundProblem(detail="Article not found")
+    article, translation = row
+    return PublicArticleOut(
+        id=article.id,
+        language=translation.language,
+        title=translation.title,
+        slug=translation.slug,
+        description=article_description(translation.text),
+        text=translation.text,
+        published_at=article.published_at,
+        translations=[
+            PublicTranslationLink(
+                language=item.language,
+                title=item.title,
+                slug=item.slug,
+            )
+            for item in article.translations
+        ],
     )
 
 

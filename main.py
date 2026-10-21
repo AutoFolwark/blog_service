@@ -8,17 +8,22 @@ from fastapi_cache.backends.redis import RedisBackend
 from fastapi_problem.handler import add_exception_handler, new_exception_handler
 
 from config import settings
+from core.logger import configure_logging
 from routers.admin.articles import admin_articles_router
 from routers.health import health_router
+from routers.v1.articles import public_articles_router
 from services.translation.jobs import reset_stale_running
 from services.translation.scheduler import (
     build_scheduler,
     validate_translation_languages,
 )
 
+configure_logging()
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    configure_logging()
     redis_client = redis.from_url(settings.REDIS_URL)
     FastAPICache.init(RedisBackend(redis_client), prefix="blog-cache")
     scheduler = None
@@ -52,6 +57,7 @@ eh = new_exception_handler()
 add_exception_handler(app, eh)
 
 public_v1_router = APIRouter(prefix="/public/v1")
+public_v1_router.include_router(public_articles_router)
 app.include_router(public_v1_router)
 
 admin_v1_router = APIRouter(prefix="/admin/v1")
@@ -62,4 +68,10 @@ app.include_router(health_router, tags=["Health"])
 
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="localhost", port=8002)
+    uvicorn.run(
+        "main:app",
+        host="localhost",
+        port=8002,
+        reload=settings.DEBUG,
+        log_config=None,
+    )

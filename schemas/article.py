@@ -4,18 +4,37 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class ArticleWrite(BaseModel):
-    language: str = Field(min_length=1, max_length=35)
+    language: str | None = Field(
+        default=None,
+        max_length=35,
+        description="Language code. Detected from the title and HTML when omitted.",
+    )
     title: str = Field(min_length=1, max_length=512)
-    slug: str = Field(min_length=1, max_length=512)
+    slug: str | None = Field(
+        default=None,
+        max_length=512,
+        description="Public slug. Generated from the title when omitted.",
+    )
     text: str = Field(
         min_length=1,
-        description="Article body in Markdown. Stored as Markdown, not HTML.",
+        description="Article body as HTML supplied by the admin. Stored as HTML.",
     )
 
     @field_validator("language")
     @classmethod
-    def lowercase_language(cls, value: str) -> str:
-        return value.strip().lower()
+    def lowercase_language(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip().lower()
+        return cleaned or None
+
+    @field_validator("slug")
+    @classmethod
+    def empty_slug_is_missing(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        return cleaned or None
 
 
 class ArticleRetranslate(BaseModel):
@@ -53,6 +72,33 @@ class ArticleOut(BaseModel):
 
 class ArticlePage(BaseModel):
     items: list[ArticleOut]
+    page: int
+    size: int
+    total: int
+
+
+class PublicArticleCard(BaseModel):
+    id: int
+    language: str
+    title: str
+    slug: str
+    description: str
+    published_at: datetime
+
+
+class PublicTranslationLink(BaseModel):
+    language: str
+    title: str
+    slug: str
+
+
+class PublicArticleOut(PublicArticleCard):
+    text: str
+    translations: list[PublicTranslationLink]
+
+
+class PublicArticlePage(BaseModel):
+    items: list[PublicArticleCard]
     page: int
     size: int
     total: int

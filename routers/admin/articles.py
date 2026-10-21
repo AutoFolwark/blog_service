@@ -45,7 +45,9 @@ async def list_all_articles(
     response_model=ArticleOut,
     status_code=201,
     description=(
-        "Create an article in one language. The text is Markdown. "
+        "Create an article. The text is HTML from the admin. "
+        "Language is detected from the title and HTML when omitted. "
+        "The slug is generated from the title when omitted. "
         f"Required permission: {Permissions.ARTICLE_ALL_WRITE.value}"
     ),
     dependencies=[Depends(require_permissions(Permissions.ARTICLE_ALL_WRITE))],
@@ -77,7 +79,7 @@ async def get_one_article(
     "/{article_id}",
     response_model=ArticleOut,
     description=(
-        "Create or change the article text for one language. "
+        "Create or change the article text for one language. The text is HTML. "
         "Editing the source re-queues automatic translations. "
         "Editing another language saves a manual translation. "
         f"Required permission: {Permissions.ARTICLE_ALL_WRITE.value}"

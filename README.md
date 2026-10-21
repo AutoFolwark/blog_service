@@ -20,7 +20,7 @@ GET /health
 
 ```
 poetry install
-poetry run uvicorn main:app --host localhost --port 8002
+poetry run uvicorn main:app --host localhost --port 8002 --reload
 ```
 
 Without Infisical credentials the service uses SQLite (`db.sqlite`) and skips remote secrets. Set `INFISICAL_CLIENT_ID`, `INFISICAL_AUTH_SECRET`, `INFISICAL_PROJECT_ID`, and `INFISICAL_ENV` to load secrets the same way as `api_service`.

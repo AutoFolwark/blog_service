@@ -26,7 +26,7 @@ RUN chmod 755 /usr/local/bin/entrypoint.sh \
     && sed -i 's/\r$//' /usr/local/bin/entrypoint.sh
 
 # Копирование файлов Poetry
-COPY pyproject.toml poetry.lock* /app/
+COPY pyproject.toml poetry.lock /app/
 
 # Установка зависимостей проекта
 RUN poetry install --only main --no-root

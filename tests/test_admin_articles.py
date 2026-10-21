@@ -1,12 +1,9 @@
-import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from database.db.session import engine
-from database.models import ArticleTranslation, Base
-from main import app
+from database.models import ArticleTranslation
 
-MARKDOWN = "# Hello\n\nThis is **markdown**."
+HTML = "<h1>Hello</h1>\n\n<p>This is <strong>html</strong>.</p>"
 
 ADMIN_HEADERS = {
     "X-User-ID": "admin-1",
@@ -19,18 +16,10 @@ ADMIN_HEADERS = {
 }
 
 
-@pytest.fixture
-def client():
-    Base.metadata.drop_all(engine)
-    Base.metadata.create_all(engine)
-    with Session(engine):
-        yield TestClient(app)
-    Base.metadata.drop_all(engine)
-
-
-def test_admin_accepts_markdown_with_raw_newlines_in_json(client: TestClient):
+def test_admin_accepts_html_with_raw_newlines_in_json(client: TestClient):
     body = (
-        '{"language":"en","title":"Hello","slug":"hello","text":"# Title\n\nParagraph"}'
+        '{"language":"en","title":"Hello","slug":"hello",'
+        '"text":"<h1>Title</h1>\n\n<p>Paragraph</p>"}'
     )
     created = client.post(
         "/admin/v1/articles",
@@ -38,7 +27,83 @@ def test_admin_accepts_markdown_with_raw_newlines_in_json(client: TestClient):
         content=body,
     )
     assert created.status_code == 201
-    assert created.json()["translations"][0]["text"] == "# Title\n\nParagraph"
+    assert (
+        created.json()["translations"][0]["text"]
+        == "<h1>Title</h1>\n\n<p>Paragraph</p>"
+    )
+
+
+def test_admin_accepts_html_quotes_inside_json_string(client: TestClient):
+    body = """{
+  "language": "pl",
+  "title": "Pod Młotek",
+  "slug": "pod-mlotek",
+  "text": "<article>
+        <img src="https://images.unsplash.com/photo.jpg" alt="Drewniany młotek">
+        <p>Sotheby's oraz Christie's</p>
+    </article>"
+}"""
+    created = client.post(
+        "/admin/v1/articles",
+        headers={**ADMIN_HEADERS, "Content-Type": "application/json"},
+        content=body.encode(),
+    )
+    assert created.status_code == 201
+    text = created.json()["translations"][0]["text"]
+    assert 'src="https://images.unsplash.com/photo.jpg"' in text
+    assert 'alt="Drewniany młotek"' in text
+    assert "Sotheby's" in text
+
+
+def test_admin_detects_language_when_omitted(client: TestClient, monkeypatch):
+    seen: list[str] = []
+
+    async def fake_detect(text: str) -> str:
+        seen.append(text)
+        return "pl"
+
+    monkeypatch.setattr("services.articles.detect_language", fake_detect)
+    created = client.post(
+        "/admin/v1/articles",
+        headers=ADMIN_HEADERS,
+        json={
+            "title": "Pod Młotek",
+            "slug": "pod-mlotek",
+            "text": "<article><p>Aukcja</p></article>",
+        },
+    )
+    assert created.status_code == 201
+    article = created.json()
+    assert article["source_language"] == "pl"
+    assert article["translations"][0]["language"] == "pl"
+    assert article["target_languages_count"] == 5
+    assert seen == ["Pod Młotek\nAukcja"]
+
+
+def test_admin_generates_slug_from_title(client: TestClient):
+    created = client.post(
+        "/admin/v1/articles",
+        headers=ADMIN_HEADERS,
+        json={
+            "language": "pl",
+            "title": "Pod Młotek",
+            "text": "<p>Aukcja</p>",
+        },
+    )
+    assert created.status_code == 201
+    assert created.json()["translations"][0]["slug"] == "pod-mlotek"
+
+    again = client.post(
+        "/admin/v1/articles",
+        headers=ADMIN_HEADERS,
+        json={
+            "language": "pl",
+            "title": "Pod Młotek",
+            "text": "<p>Jeszcze raz</p>",
+        },
+    )
+    assert again.status_code == 201
+    assert again.json()["translations"][0]["slug"] == f"pod-mlotek-{again.json()['id']}"
 
 
 def test_admin_rejects_broken_json(client: TestClient):
@@ -50,7 +115,7 @@ def test_admin_rejects_broken_json(client: TestClient):
     assert created.status_code == 422
 
 
-def test_admin_creates_changes_publishes_and_hides_markdown(client: TestClient):
+def test_admin_creates_changes_publishes_and_hides_html(client: TestClient, test_db):
     created = client.post(
         "/admin/v1/articles",
         headers=ADMIN_HEADERS,
@@ -58,7 +123,7 @@ def test_admin_creates_changes_publishes_and_hides_markdown(client: TestClient):
             "language": "EN",
             "title": "Hello",
             "slug": "hello",
-            "text": MARKDOWN,
+            "text": HTML,
         },
     )
     assert created.status_code == 201
@@ -73,7 +138,7 @@ def test_admin_creates_changes_publishes_and_hides_markdown(client: TestClient):
             "language": "en",
             "title": "Hello",
             "slug": "hello",
-            "text": MARKDOWN,
+            "text": HTML,
             "origin": "source",
         }
     ]
@@ -84,14 +149,14 @@ def test_admin_creates_changes_publishes_and_hides_markdown(client: TestClient):
     assert fetched.status_code == 200
     assert fetched.json()["id"] == article["id"]
 
-    with Session(engine) as session:
+    with Session(test_db.engine) as session:
         session.add(
             ArticleTranslation(
                 article_id=article["id"],
                 language="de",
                 title="Hallo",
                 slug="hallo",
-                text="## Hallo",
+                text="<h2>Hallo</h2>",
             )
         )
         session.commit()
@@ -103,15 +168,15 @@ def test_admin_creates_changes_publishes_and_hides_markdown(client: TestClient):
             "language": "en",
             "title": "Hello again",
             "slug": "hello",
-            "text": MARKDOWN + "\n\nUpdated.",
+            "text": HTML + "\n\nUpdated.",
         },
     )
     assert changed.status_code == 200
     by_language = {item["language"]: item for item in changed.json()["translations"]}
     assert by_language["en"]["title"] == "Hello again"
-    assert by_language["en"]["text"] == MARKDOWN + "\n\nUpdated."
+    assert by_language["en"]["text"] == HTML + "\n\nUpdated."
     assert by_language["de"]["title"] == "Hallo"
-    assert by_language["de"]["text"] == "## Hallo"
+    assert by_language["de"]["text"] == "<h2>Hallo</h2>"
 
     published = client.post(
         f"/admin/v1/articles/{article['id']}/publish",
@@ -139,7 +204,7 @@ def test_admin_endpoints_reject_missing_permission(client: TestClient):
             "language": "en",
             "title": "Hello",
             "slug": "hello",
-            "text": MARKDOWN,
+            "text": HTML,
         },
     )
     article_id = created.json()["id"]

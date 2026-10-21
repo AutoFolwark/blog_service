@@ -128,4 +128,8 @@ def load_secrets():
             "Missing INFISICAL_CLIENT_ID, INFISICAL_AUTH_SECRET, or INFISICAL_PROJECT_ID in environment variables"
         )
 
-    os.environ["DEBUG"] = "false" if is_aws or is_in_docker() else "true"
+    deployed = is_aws or is_in_docker()
+    os.environ["DEBUG"] = "false" if deployed else "true"
+    # Docs follow ENVIRONMENT, so a container must not keep the development default.
+    if deployed:
+        os.environ["ENVIRONMENT"] = "production"

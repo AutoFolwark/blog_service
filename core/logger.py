@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 import time
 from contextlib import asynccontextmanager
 from functools import wraps
@@ -113,6 +114,33 @@ def log_async_execution_time(
 
 
 logger = loguru_logger
+
+
+class InterceptHandler(logging.Handler):
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            level: str | int = logger.level(record.levelname).name
+        except ValueError:
+            level = record.levelno
+
+        frame, depth = logging.currentframe(), 2
+        while frame and frame.f_code.co_filename == logging.__file__:
+            frame = frame.f_back
+            depth += 1
+
+        logger.opt(depth=depth, exception=record.exc_info).log(
+            level, record.getMessage()
+        )
+
+
+def configure_logging() -> None:
+    """Send uvicorn, FastAPI, and other stdlib logs through loguru."""
+    logging.root.handlers = [InterceptHandler()]
+    logging.root.setLevel(logging.INFO)
+    for name in list(logging.root.manager.loggerDict):
+        found = logging.getLogger(name)
+        found.handlers = []
+        found.propagate = True
 
 
 def truncate_log_value(value: Any, max_chars: int = 2000) -> str:

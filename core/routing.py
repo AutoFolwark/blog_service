@@ -1,15 +1,16 @@
-import json
 from collections.abc import Awaitable, Callable
 
 from fastapi import Request, Response
 from fastapi.routing import APIRoute
 
+from core.json_body import loads_lenient_json
+
 
 class LenientJSONRoute(APIRoute):
-    """Parse JSON bodies with control characters allowed inside strings.
+    """Parse admin JSON that contains pasted article HTML.
 
-    Article Markdown is often pasted with raw newlines. Standard JSON rejects
-    those characters; ``strict=False`` accepts them and still rejects broken JSON.
+    The body may include raw newlines and raw quotes inside ``text``,
+    such as ``<img src="...">``. Other broken JSON is still rejected.
     """
 
     def get_route_handler(self) -> Callable[[Request], Awaitable[Response]]:
@@ -19,7 +20,7 @@ class LenientJSONRoute(APIRoute):
             async def load_json():
                 if not hasattr(request, "_json"):
                     body = await request.body()
-                    request._json = json.loads(body, strict=False)
+                    request._json = loads_lenient_json(body)
                 return request._json
 
             request.json = load_json

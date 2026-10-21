@@ -2,17 +2,13 @@ import pytest
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from database.db.session import engine
-from database.models import Article, ArticleTranslation, Base
+from database.models import Article, ArticleTranslation
 
 
 @pytest.fixture
-def db():
-    Base.metadata.drop_all(engine)
-    Base.metadata.create_all(engine)
-    with Session(engine) as session:
+def db(test_db):
+    with Session(test_db.engine) as session:
         yield session
-    Base.metadata.drop_all(engine)
 
 
 def test_article_stores_two_languages(db: Session):

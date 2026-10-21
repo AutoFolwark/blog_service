@@ -7,7 +7,7 @@ from sqlalchemy.orm import selectinload
 from config import settings
 from database.db.session import AsyncSessionLocal
 from database.models import Article, ArticleTranslation, ArticleTranslationJob
-from services.translation.markdown import translate_markdown
+from services.translation.html import translate_html
 from services.translation.translator import translate
 
 
@@ -78,7 +78,7 @@ async def reset_stale_running() -> None:
         await session.commit()
 
 
-async def _unique_slug(session, language: str, title: str, article_id: int) -> str:
+async def unique_slug(session, language: str, title: str, article_id: int) -> str:
     base = slugify(title, max_length=480) or f"article-{article_id}"
     taken = await session.scalar(
         select(ArticleTranslation.id).where(
@@ -138,8 +138,8 @@ async def _process_one(job_id: int) -> None:
                 await session.commit()
                 return
             title = await translate(source.title, source.language, job.language)
-            body = await translate_markdown(source.text, source.language, job.language)
-            slug = await _unique_slug(session, job.language, title, article.id)
+            body = await translate_html(source.text, source.language, job.language)
+            slug = await unique_slug(session, job.language, title, article.id)
             if current is None:
                 session.add(
                     ArticleTranslation(
